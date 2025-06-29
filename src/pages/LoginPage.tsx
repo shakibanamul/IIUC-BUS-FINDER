@@ -1,17 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { Link, Navigate } from 'react-router-dom';
+import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { signInWithGoogle, checkGoogleOAuthConfig } from '../lib/supabase';
 import { Bus, Lock, User, Eye, EyeOff, AlertCircle, Loader2, Mail, CheckCircle, Wifi, WifiOff, ArrowLeft, Sparkles, Key, Info, Settings, ExternalLink, Shield, Globe, Star } from 'lucide-react';
 
 const LoginPage: React.FC = () => {
   const { signIn, user, userProfile, loading } = useAuth();
+  const [searchParams] = useSearchParams();
   const [formData, setFormData] = useState({
     identifier: '', // Can be email or university ID
     password: '',
   });
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
@@ -22,19 +24,46 @@ const LoginPage: React.FC = () => {
   const [showSetupGuide, setShowSetupGuide] = useState(false);
   const [googleConfigStatus, setGoogleConfigStatus] = useState<'checking' | 'available' | 'needs-setup'>('checking');
 
+  // Check for Google OAuth success/error in URL params
+  useEffect(() => {
+    const googleParam = searchParams.get('google');
+    const errorParam = searchParams.get('error');
+    const errorDescription = searchParams.get('error_description');
+
+    if (googleParam === 'success') {
+      setSuccess('Google Sign-In successful! You are now logged in.');
+      // Clear URL params
+      window.history.replaceState({}, document.title, window.location.pathname);
+    } else if (errorParam) {
+      setError(`Google Sign-In failed: ${errorDescription || errorParam}`);
+      // Clear URL params
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, [searchParams]);
+
   // Check Google OAuth configuration on component mount
   useEffect(() => {
     const checkGoogleConfig = async () => {
       try {
-        const { isConfigured } = await checkGoogleOAuthConfig();
-        setGoogleConfigStatus(isConfigured ? 'available' : 'needs-setup');
+        setGoogleConfigStatus('checking');
+        const { isConfigured, error } = await checkGoogleOAuthConfig();
+        
+        if (isConfigured) {
+          setGoogleConfigStatus('available');
+          console.log('✅ Google OAuth is configured and available');
+        } else {
+          setGoogleConfigStatus('needs-setup');
+          console.warn('⚠️ Google OAuth needs setup:', error);
+        }
       } catch (error) {
-        console.error('Error checking Google config:', error);
+        console.error('❌ Error checking Google config:', error);
         setGoogleConfigStatus('needs-setup');
       }
     };
 
-    checkGoogleConfig();
+    // Add a small delay to avoid immediate checking
+    const timer = setTimeout(checkGoogleConfig, 500);
+    return () => clearTimeout(timer);
   }, []);
 
   // Show loading spinner while auth is initializing
@@ -62,6 +91,7 @@ const LoginPage: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setSuccess('');
     setIsLoading(true);
 
     if (!formData.identifier.trim() || !formData.password.trim()) {
@@ -95,6 +125,7 @@ const LoginPage: React.FC = () => {
         }
       } else {
         console.log('✅ Login successful, waiting for redirect...');
+        setSuccess('Login successful! Redirecting to your dashboard...');
         // Don't set loading to false here - let the auth context handle it
         return;
       }
@@ -112,6 +143,7 @@ const LoginPage: React.FC = () => {
 
   const handleGoogleSignIn = async () => {
     setError('');
+    setSuccess('');
     setIsGoogleLoading(true);
 
     try {
@@ -128,6 +160,7 @@ const LoginPage: React.FC = () => {
         }
       } else if (data) {
         console.log('✅ Google sign-in initiated successfully');
+        setSuccess('Redirecting to Google for authentication...');
         // The redirect will happen automatically
         // Don't set loading to false here as the page will redirect
         return;
@@ -203,6 +236,14 @@ const LoginPage: React.FC = () => {
             {/* Login Form - Mobile-First Design */}
             <div className="bg-white/90 backdrop-blur-sm rounded-2xl sm:rounded-3xl shadow-xl border border-gray-200/50 p-6 sm:p-8 mb-6">
               
+              {/* Success Message */}
+              {success && (
+                <div className="mb-6 bg-green-50 border border-green-200 rounded-xl p-3 sm:p-4 flex items-start space-x-3">
+                  <CheckCircle className="h-4 w-4 sm:h-5 sm:w-5 text-green-500 flex-shrink-0 mt-0.5" />
+                  <p className="text-green-700 text-sm leading-relaxed">{success}</p>
+                </div>
+              )}
+
               {/* Error Message - Mobile Optimized */}
               {error && (
                 <div className="space-y-3 mb-6">
@@ -410,7 +451,7 @@ const LoginPage: React.FC = () => {
                         <li>Enable Google provider</li>
                         <li>Get Google OAuth credentials from Google Cloud Console</li>
                         <li>Add Client ID and Client Secret to Supabase</li>
-                        <li>Configure redirect URLs</li>
+                        <li>Configure redirect URLs: <code className="bg-gray-200 px-1 rounded text-xs">{window.location.origin}/login</code></li>
                         <li>Test the integration</li>
                       </ol>
                     </div>

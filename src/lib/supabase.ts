@@ -31,7 +31,7 @@ if (supabaseUrl && supabaseAnonKey && supabaseUrl !== 'https://placeholder.supab
   console.warn('⚠️ Supabase credentials missing - running in offline mode');
 }
 
-// Check if Google OAuth is configured
+// Enhanced Google OAuth configuration check
 export const checkGoogleOAuthConfig = async (): Promise<{ isConfigured: boolean; error?: string }> => {
   try {
     // Check if Supabase is properly configured
@@ -52,9 +52,37 @@ export const checkGoogleOAuthConfig = async (): Promise<{ isConfigured: boolean;
       };
     }
 
-    // For now, we'll assume Google OAuth might be configured
-    // In a real implementation, you'd check the auth providers endpoint
-    return { isConfigured: true };
+    // Check if we can access auth providers (this will help determine if Google is configured)
+    try {
+      // Try a test OAuth call to see if providers are available
+      const testResult = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/login?test=true`,
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'consent',
+          },
+        }
+      });
+      
+      // If we get here without error, Google OAuth is likely configured
+      return { isConfigured: true };
+      
+    } catch (oauthError: any) {
+      // If OAuth fails, it might be a configuration issue
+      if (oauthError.message?.includes('not enabled') || 
+          oauthError.message?.includes('provider') ||
+          oauthError.message?.includes('client_id')) {
+        return {
+          isConfigured: false,
+          error: 'Google OAuth is not properly configured in Supabase. Please check your provider settings.'
+        };
+      }
+      
+      // For other errors, assume it might be configured but there's a different issue
+      return { isConfigured: true };
+    }
     
   } catch (error: any) {
     return {
@@ -64,67 +92,83 @@ export const checkGoogleOAuthConfig = async (): Promise<{ isConfigured: boolean;
   }
 };
 
-// Enhanced Google Sign-In function
+// Enhanced Google Sign-In function with better error handling
 export const signInWithGoogle = async (): Promise<{ data?: any; error?: any; needsSetup?: boolean }> => {
   try {
     console.log('🔐 Attempting Google Sign-In...');
 
     // First check if Supabase is configured
-    const configCheck = await checkGoogleOAuthConfig();
-    if (!configCheck.isConfigured) {
+    if (!supabaseUrl || !supabaseAnonKey || supabaseUrl === 'https://placeholder.supabase.co') {
       return {
-        error: { message: configCheck.error },
+        error: { message: 'Supabase is not properly configured. Please contact the administrator.' },
         needsSetup: true
       };
     }
 
-    // Attempt Google OAuth sign-in
+    // Get current URL for redirect
+    const currentUrl = window.location.origin;
+    const redirectUrl = `${currentUrl}/login?google=success`;
+
+    console.log('🔗 Redirect URL:', redirectUrl);
+
+    // Attempt Google OAuth sign-in with enhanced options
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: `${window.location.origin}/login?google=success`,
+        redirectTo: redirectUrl,
         queryParams: {
           access_type: 'offline',
           prompt: 'consent',
+          hd: '', // Allow any domain, remove if you want to restrict to specific domains
         },
+        skipBrowserRedirect: false, // Ensure browser redirect happens
       }
     });
 
     if (error) {
       console.error('❌ Google OAuth error:', error);
       
-      // Handle specific Google OAuth errors
+      // Enhanced error handling with specific messages
       if (error.message?.includes('not enabled') || error.message?.includes('provider')) {
         return {
           error: { 
-            message: 'Google Sign-In is not enabled in Supabase. Please contact the administrator to enable Google OAuth provider.' 
+            message: 'Google Sign-In is not enabled in Supabase. Please contact the administrator to enable the Google OAuth provider in the Supabase dashboard.' 
           },
           needsSetup: true
         };
       } else if (error.message?.includes('redirect') || error.message?.includes('url')) {
         return {
           error: { 
-            message: 'Google Sign-In redirect URL is not configured properly. Please contact the administrator.' 
+            message: 'Google Sign-In redirect URL is not configured properly. Please contact the administrator to add the correct redirect URLs in Supabase.' 
           },
           needsSetup: true
         };
       } else if (error.message?.includes('client_id') || error.message?.includes('client')) {
         return {
           error: { 
-            message: 'Google OAuth client is not configured. Please contact the administrator to set up Google OAuth credentials.' 
+            message: 'Google OAuth client is not configured. Please contact the administrator to set up Google OAuth credentials in Supabase.' 
+          },
+          needsSetup: true
+        };
+      } else if (error.message?.includes('unauthorized') || error.message?.includes('invalid')) {
+        return {
+          error: { 
+            message: 'Google OAuth configuration is invalid. Please contact the administrator to verify the Google OAuth settings.' 
           },
           needsSetup: true
         };
       } else {
         return {
           error: { 
-            message: `Google Sign-In failed: ${error.message}. Please try again or contact support.` 
+            message: `Google Sign-In failed: ${error.message}. Please try again or contact support if the issue persists.` 
           }
         };
       }
     }
 
     console.log('✅ Google Sign-In initiated successfully');
+    console.log('📊 OAuth data:', data);
+    
     return { data };
 
   } catch (err: any) {
