@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { signInWithGoogle, checkGoogleOAuthConfig } from '../lib/supabase';
+import { signInWithGoogle } from '../lib/supabase';
 import { Bus, Lock, User, Eye, EyeOff, AlertCircle, Loader2, Mail, CheckCircle, Wifi, WifiOff, ArrowLeft, Sparkles, Key, Info, Settings, ExternalLink, Shield, Globe, Star } from 'lucide-react';
 
 const LoginPage: React.FC = () => {
@@ -22,7 +22,6 @@ const LoginPage: React.FC = () => {
   const [forgotPasswordSuccess, setForgotPasswordSuccess] = useState('');
   const [forgotPasswordError, setForgotPasswordError] = useState('');
   const [showSetupGuide, setShowSetupGuide] = useState(false);
-  const [googleConfigStatus, setGoogleConfigStatus] = useState<'checking' | 'available' | 'needs-setup'>('available'); // Default to available
 
   // Check for Google OAuth success/error in URL params
   useEffect(() => {
@@ -40,42 +39,6 @@ const LoginPage: React.FC = () => {
       window.history.replaceState({}, document.title, window.location.pathname);
     }
   }, [searchParams]);
-
-  // Check Google OAuth configuration on component mount
-  useEffect(() => {
-    const checkGoogleConfig = async () => {
-      try {
-        setGoogleConfigStatus('checking');
-        
-        // Add a delay to show the checking state
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        const { isConfigured, error } = await checkGoogleOAuthConfig();
-        
-        if (isConfigured) {
-          setGoogleConfigStatus('available');
-          console.log('✅ Google OAuth is assumed to be configured');
-        } else {
-          setGoogleConfigStatus('needs-setup');
-          console.warn('⚠️ Google OAuth needs setup:', error);
-        }
-      } catch (error) {
-        console.error('❌ Error checking Google config:', error);
-        // Default to available and let the actual sign-in attempt handle errors
-        setGoogleConfigStatus('available');
-      }
-    };
-
-    // Only check if we have valid Supabase credentials
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-    const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-    
-    if (supabaseUrl && supabaseAnonKey && supabaseUrl !== 'https://placeholder.supabase.co') {
-      checkGoogleConfig();
-    } else {
-      setGoogleConfigStatus('needs-setup');
-    }
-  }, []);
 
   // Show loading spinner while auth is initializing
   if (loading) {
@@ -167,7 +130,6 @@ const LoginPage: React.FC = () => {
         setError(error.message);
         
         if (needsSetup) {
-          setGoogleConfigStatus('needs-setup');
           setShowSetupGuide(true);
         }
       } else if (data) {
@@ -191,6 +153,11 @@ const LoginPage: React.FC = () => {
       [e.target.name]: e.target.value,
     });
   };
+
+  // Check if we should show Google Sign-In (only if Supabase is configured)
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  const showGoogleSignIn = supabaseUrl && supabaseAnonKey && supabaseUrl !== 'https://placeholder.supabase.co';
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 relative overflow-hidden">
@@ -288,14 +255,9 @@ const LoginPage: React.FC = () => {
                 </div>
               )}
 
-              {/* Google Sign-In Section - Enhanced */}
-              <div className="space-y-4 mb-6">
-                {googleConfigStatus === 'checking' ? (
-                  <div className="flex items-center justify-center py-4">
-                    <Loader2 className="h-5 w-5 animate-spin text-gray-400 mr-2" />
-                    <span className="text-gray-500 text-sm">Checking Google Sign-In availability...</span>
-                  </div>
-                ) : googleConfigStatus === 'available' ? (
+              {/* Google Sign-In Section - Always Show if Supabase is Configured */}
+              {showGoogleSignIn && (
+                <div className="space-y-4 mb-6">
                   <button
                     onClick={handleGoogleSignIn}
                     disabled={isGoogleLoading || isLoading}
@@ -315,7 +277,7 @@ const LoginPage: React.FC = () => {
                           <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
                           <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
                         </svg>
-                        <span className="text-gray-700 font-medium">Continue with Google</span>
+                        <span className="text-gray-700 font-medium">Sign in with Google</span>
                         <div className="flex items-center space-x-1">
                           <Star className="h-3 w-3 text-yellow-500" />
                           <span className="text-xs text-gray-500">Fast</span>
@@ -323,36 +285,18 @@ const LoginPage: React.FC = () => {
                       </>
                     )}
                   </button>
-                ) : (
-                  <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
-                    <div className="flex items-start space-x-3">
-                      <Settings className="h-5 w-5 text-orange-500 flex-shrink-0 mt-0.5" />
-                      <div className="text-sm text-orange-800">
-                        <p className="font-medium mb-2">⚙️ Google Sign-In Setup Required</p>
-                        <p className="mb-3 leading-relaxed">
-                          Google Sign-In is not configured yet. The administrator needs to set up Google OAuth in Supabase to enable this feature.
-                        </p>
-                        <button
-                          onClick={() => setShowSetupGuide(!showSetupGuide)}
-                          className="text-orange-600 hover:text-orange-700 font-medium text-xs underline"
-                        >
-                          {showSetupGuide ? 'Hide' : 'Show'} Setup Instructions
-                        </button>
-                      </div>
+
+                  {/* Divider */}
+                  <div className="relative">
+                    <div className="absolute inset-0 flex items-center">
+                      <div className="w-full border-t border-gray-200"></div>
+                    </div>
+                    <div className="relative flex justify-center text-sm">
+                      <span className="px-4 bg-white text-gray-500 font-medium">Or continue with email</span>
                     </div>
                   </div>
-                )}
-
-                {/* Divider */}
-                <div className="relative">
-                  <div className="absolute inset-0 flex items-center">
-                    <div className="w-full border-t border-gray-200"></div>
-                  </div>
-                  <div className="relative flex justify-center text-sm">
-                    <span className="px-4 bg-white text-gray-500 font-medium">Or continue with email</span>
-                  </div>
                 </div>
-              </div>
+              )}
 
               <form onSubmit={handleSubmit} className="space-y-5 sm:space-y-6">
                 {/* Identifier Field - Mobile Optimized */}
@@ -444,7 +388,7 @@ const LoginPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Google Setup Guide - Mobile Optimized */}
+            {/* Google Setup Guide - Only Show When Error Occurs */}
             {showSetupGuide && (
               <div className="bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl sm:rounded-2xl p-4 sm:p-6 border border-purple-200 mb-6">
                 <div className="flex items-start space-x-3">
@@ -493,8 +437,8 @@ const LoginPage: React.FC = () => {
               </div>
             )}
 
-            {/* Google Sign-In Benefits - Mobile Optimized */}
-            {googleConfigStatus === 'available' && (
+            {/* Google Sign-In Benefits - Only Show if Google is Available */}
+            {showGoogleSignIn && !showSetupGuide && (
               <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl sm:rounded-2xl p-4 sm:p-6 border border-green-200 mb-6">
                 <h3 className="font-semibold text-green-900 mb-3 text-center text-sm sm:text-base flex items-center justify-center space-x-2">
                   <svg className="h-4 w-4" viewBox="0 0 24 24">
@@ -532,7 +476,7 @@ const LoginPage: React.FC = () => {
                 <CheckCircle className="h-4 w-4 sm:h-5 sm:w-5 text-green-500 flex-shrink-0 mt-0.5" />
                 <div className="text-sm text-green-700">
                   <p className="font-semibold mb-1">Just Verified Your Email?</p>
-                  <p className="text-xs sm:text-sm">Perfect! You can now sign in with your credentials{googleConfigStatus === 'available' ? ' or use Google Sign-In' : ''}.</p>
+                  <p className="text-xs sm:text-sm">Perfect! You can now sign in with your credentials{showGoogleSignIn ? ' or use Google Sign-In' : ''}.</p>
                 </div>
               </div>
             </div>
