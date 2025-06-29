@@ -16,11 +16,6 @@ const LoginPage: React.FC = () => {
   const [success, setSuccess] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
-  const [showForgotPassword, setShowForgotPassword] = useState(false);
-  const [forgotPasswordEmail, setForgotPasswordEmail] = useState('');
-  const [forgotPasswordLoading, setForgotPasswordLoading] = useState(false);
-  const [forgotPasswordSuccess, setForgotPasswordSuccess] = useState('');
-  const [forgotPasswordError, setForgotPasswordError] = useState('');
   const [showSetupGuide, setShowSetupGuide] = useState(false);
 
   // Check for Google OAuth success/error in URL params
@@ -77,7 +72,6 @@ const LoginPage: React.FC = () => {
     try {
       console.log('🔐 Starting login process...');
       
-      // Add a timeout wrapper for the entire login process
       const loginPromise = signIn(formData.identifier, formData.password);
       const timeoutPromise = new Promise((_, reject) => 
         setTimeout(() => reject(new Error('Login process timeout')), 15000)
@@ -100,7 +94,6 @@ const LoginPage: React.FC = () => {
       } else {
         console.log('✅ Login successful, waiting for redirect...');
         setSuccess('Login successful! Redirecting to your dashboard...');
-        // Don't set loading to false here - let the auth context handle it
         return;
       }
     } catch (err: any) {
@@ -136,7 +129,6 @@ const LoginPage: React.FC = () => {
         console.log('✅ Google sign-in initiated successfully');
         setSuccess('Redirecting to Google for authentication...');
         // The redirect will happen automatically
-        // Don't set loading to false here as the page will redirect
         return;
       }
     } catch (err: any) {

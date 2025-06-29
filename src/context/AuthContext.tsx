@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User as SupabaseUser } from '@supabase/supabase-js';
-import { supabase, User } from '../lib/supabase';
+import { supabase, User, handleGoogleCallback } from '../lib/supabase';
 
 interface AuthContextType {
   user: SupabaseUser | null;
@@ -46,11 +46,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
           return;
         }
+
+        // Check for Google OAuth callback
+        const urlParams = new URLSearchParams(window.location.search);
+        const isGoogleCallback = urlParams.get('google') === 'success' || 
+                                 window.location.hash.includes('access_token') ||
+                                 urlParams.has('code');
+
+        if (isGoogleCallback) {
+          console.log('🔍 Detected Google OAuth callback');
+          
+          // Handle Google callback
+          const { success, user: googleUser, error } = await handleGoogleCallback();
+          
+          if (success && googleUser) {
+            console.log('✅ Google OAuth callback handled successfully');
+            // Clean up URL
+            window.history.replaceState({}, document.title, window.location.pathname);
+          } else if (error) {
+            console.error('❌ Google OAuth callback error:', error);
+            // Clean up URL even on error
+            window.history.replaceState({}, document.title, window.location.pathname);
+          }
+        }
         
         // Get initial session with increased timeout
         const sessionPromise = supabase.auth.getSession();
         const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Session timeout')), 8000) // Increased from 2000 to 8000ms
+          setTimeout(() => reject(new Error('Session timeout')), 10000)
         );
         
         const { data: { session }, error } = await Promise.race([
@@ -75,7 +98,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (mounted) {
           setUser(session?.user ?? null);
           
-          if (session?.user && session.user.email_confirmed_at) {
+          if (session?.user) {
             await fetchUserProfile(session.user.id);
           } else {
             setLoading(false);
@@ -89,13 +112,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     };
 
-    // Set a maximum initialization time with increased timeout
+    // Set a maximum initialization time
     initTimeout = setTimeout(() => {
       if (mounted && loading) {
         console.log('⏰ Auth initialization timeout - forcing load completion');
         setLoading(false);
       }
-    }, 10000); // Increased from 1500 to 10000ms
+    }, 12000);
 
     initializeAuth();
 
@@ -112,7 +135,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       setUser(session?.user ?? null);
       
-      if (session?.user && session.user.email_confirmed_at) {
+      if (session?.user) {
         await fetchUserProfile(session.user.id);
       } else {
         setUserProfile(null);
@@ -133,7 +156,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       console.log('👤 Fetching profile for user:', userId);
       
-      // Add increased timeout to profile fetch
       const profilePromise = supabase
         .from('users')
         .select('*')
@@ -141,7 +163,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .maybeSingle();
         
       const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Profile fetch timeout')), 10000) // Increased from 3000 to 10000ms
+        setTimeout(() => reject(new Error('Profile fetch timeout')), 10000)
       );
 
       const { data, error } = await Promise.race([
@@ -184,15 +206,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const metadata = user.user_metadata || {};
       
-      const profileData = {
-        id: userId,
-        email: user.email!,
-        name: metadata.name || 'User',
-        university_id: metadata.university_id || `TEMP_${userId.substring(0, 8)}`,
-        mobile: metadata.mobile || '',
-        gender: metadata.gender || 'Male',
-        role: metadata.role || 'student'
-      };
+      // Handle Google OAuth users
+      const isGoogleUser = user.app_metadata?.provider === 'google';
+      
+      let profileData;
+      
+      if (isGoogleUser) {
+        // For Google users, extract data from OAuth
+        profileData = {
+          id: userId,
+          email: user.email!,
+          name: metadata.full_name || metadata.name || 'Google User',
+          university_id: `GOOGLE_${userId.substring(0, 8).toUpperCase()}`,
+          mobile: '', // User will update later
+          gender: 'Male', // Default, user can update
+          role: 'student' // Default role
+        };
+      } else {
+        // For email/password users
+        profileData = {
+          id: userId,
+          email: user.email!,
+          name: metadata.name || 'User',
+          university_id: metadata.university_id || `TEMP_${userId.substring(0, 8)}`,
+          mobile: metadata.mobile || '',
+          gender: metadata.gender || 'Male',
+          role: metadata.role || 'student'
+        };
+      }
 
       const { data, error } = await supabase
         .from('users')
@@ -257,7 +298,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       console.log('🔐 Attempting login with:', identifier);
       
-      // Add timeout to sign-in process
       const signInPromise = supabase.auth.signInWithPassword({
         email: identifier,
         password,

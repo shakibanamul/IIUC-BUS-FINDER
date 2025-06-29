@@ -31,59 +31,12 @@ if (supabaseUrl && supabaseAnonKey && supabaseUrl !== 'https://placeholder.supab
   console.warn('⚠️ Supabase credentials missing - running in offline mode');
 }
 
-// Improved Google OAuth configuration check
-export const checkGoogleOAuthConfig = async (): Promise<{ isConfigured: boolean; error?: string }> => {
-  try {
-    // Check if Supabase is properly configured
-    if (!supabaseUrl || !supabaseAnonKey || supabaseUrl === 'https://placeholder.supabase.co') {
-      return {
-        isConfigured: false,
-        error: 'Supabase is not properly configured. Please set up your Supabase project first.'
-      };
-    }
-
-    // For now, we'll assume Google OAuth might be configured if Supabase is working
-    // In a production environment, you would check the auth providers endpoint
-    // or have a specific endpoint to check provider availability
-    
-    try {
-      // Test basic auth functionality
-      const { data, error } = await supabase.auth.getSession();
-      
-      if (error) {
-        return {
-          isConfigured: false,
-          error: `Supabase connection error: ${error.message}`
-        };
-      }
-
-      // Since we can't reliably detect Google OAuth configuration without making an actual request,
-      // we'll assume it's available if Supabase is working properly
-      // The actual Google OAuth errors will be handled in the signInWithGoogle function
-      console.log('✅ Supabase auth is working, assuming Google OAuth might be configured');
-      return { isConfigured: true };
-      
-    } catch (authError: any) {
-      return {
-        isConfigured: false,
-        error: `Auth system error: ${authError.message}`
-      };
-    }
-    
-  } catch (error: any) {
-    return {
-      isConfigured: false,
-      error: `Configuration check failed: ${error.message}`
-    };
-  }
-};
-
-// Enhanced Google Sign-In function with better error handling
+// Enhanced Google Sign-In function with automatic profile creation
 export const signInWithGoogle = async (): Promise<{ data?: any; error?: any; needsSetup?: boolean }> => {
   try {
-    console.log('🔐 Attempting Google Sign-In...');
+    console.log('🔐 Starting Google Sign-In process...');
 
-    // First check if Supabase is configured
+    // Check if Supabase is configured
     if (!supabaseUrl || !supabaseAnonKey || supabaseUrl === 'https://placeholder.supabase.co') {
       return {
         error: { message: 'Supabase is not properly configured. Please contact the administrator.' },
@@ -97,63 +50,54 @@ export const signInWithGoogle = async (): Promise<{ data?: any; error?: any; nee
 
     console.log('🔗 Redirect URL:', redirectUrl);
 
-    // Attempt Google OAuth sign-in with enhanced options
+    // Attempt Google OAuth sign-in
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
         redirectTo: redirectUrl,
         queryParams: {
           access_type: 'offline',
-          prompt: 'consent',
+          prompt: 'select_account', // Allow users to select account
         },
-        skipBrowserRedirect: false, // Ensure browser redirect happens
+        skipBrowserRedirect: false,
       }
     });
 
     if (error) {
       console.error('❌ Google OAuth error:', error);
       
-      // Enhanced error handling with specific messages
+      // Enhanced error handling
       if (error.message?.includes('not enabled') || error.message?.includes('provider')) {
         return {
           error: { 
-            message: 'Google Sign-In is not enabled in Supabase. Please contact the administrator to enable the Google OAuth provider in the Supabase dashboard.' 
+            message: 'Google Sign-In is not enabled. Please contact the administrator to enable Google OAuth in Supabase.' 
           },
           needsSetup: true
         };
       } else if (error.message?.includes('redirect') || error.message?.includes('url')) {
         return {
           error: { 
-            message: 'Google Sign-In redirect URL is not configured properly. Please contact the administrator to add the correct redirect URLs in Supabase.' 
+            message: 'Google Sign-In redirect URL is not configured properly. Please contact the administrator.' 
           },
           needsSetup: true
         };
       } else if (error.message?.includes('client_id') || error.message?.includes('client')) {
         return {
           error: { 
-            message: 'Google OAuth client is not configured. Please contact the administrator to set up Google OAuth credentials in Supabase.' 
-          },
-          needsSetup: true
-        };
-      } else if (error.message?.includes('unauthorized') || error.message?.includes('invalid')) {
-        return {
-          error: { 
-            message: 'Google OAuth configuration is invalid. Please contact the administrator to verify the Google OAuth settings.' 
+            message: 'Google OAuth client is not configured. Please contact the administrator.' 
           },
           needsSetup: true
         };
       } else {
         return {
           error: { 
-            message: `Google Sign-In failed: ${error.message}. Please try again or contact support if the issue persists.` 
+            message: `Google Sign-In failed: ${error.message}. Please try again or contact support.` 
           }
         };
       }
     }
 
     console.log('✅ Google Sign-In initiated successfully');
-    console.log('📊 OAuth data:', data);
-    
     return { data };
 
   } catch (err: any) {
@@ -163,6 +107,103 @@ export const signInWithGoogle = async (): Promise<{ data?: any; error?: any; nee
         message: 'An unexpected error occurred with Google Sign-In. Please try again or use email/password login.' 
       }
     };
+  }
+};
+
+// Function to create user profile from Google OAuth data
+export const createUserProfileFromGoogle = async (user: any): Promise<{ success: boolean; error?: any }> => {
+  try {
+    console.log('👤 Creating user profile from Google data:', user);
+
+    // Extract information from Google OAuth
+    const googleData = user.user_metadata || {};
+    const email = user.email;
+    const fullName = googleData.full_name || googleData.name || 'Google User';
+    
+    // Generate a temporary university ID (admin can update later)
+    const tempUniversityId = `GOOGLE_${user.id.substring(0, 8).toUpperCase()}`;
+
+    const profileData = {
+      id: user.id,
+      email: email,
+      name: fullName,
+      university_id: tempUniversityId,
+      mobile: '', // Will be updated by user later
+      gender: 'Male', // Default, user can update
+      role: 'student' // Default role
+    };
+
+    console.log('📝 Profile data to insert:', profileData);
+
+    const { data, error } = await supabase
+      .from('users')
+      .insert([profileData])
+      .select()
+      .single();
+
+    if (error) {
+      console.error('❌ Error creating user profile:', error);
+      return { success: false, error };
+    }
+
+    console.log('✅ User profile created successfully:', data);
+    return { success: true };
+
+  } catch (error) {
+    console.error('❌ Unexpected error creating user profile:', error);
+    return { success: false, error };
+  }
+};
+
+// Function to handle Google OAuth callback
+export const handleGoogleCallback = async (): Promise<{ success: boolean; user?: any; error?: any }> => {
+  try {
+    console.log('🔄 Handling Google OAuth callback...');
+
+    // Get the current session
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+
+    if (sessionError) {
+      console.error('❌ Session error:', sessionError);
+      return { success: false, error: sessionError };
+    }
+
+    if (!session || !session.user) {
+      console.log('⚠️ No session found');
+      return { success: false, error: { message: 'No session found' } };
+    }
+
+    const user = session.user;
+    console.log('👤 User from session:', user);
+
+    // Check if user profile already exists
+    const { data: existingProfile, error: profileError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', user.id)
+      .single();
+
+    if (profileError && profileError.code !== 'PGRST116') { // PGRST116 = no rows returned
+      console.error('❌ Error checking existing profile:', profileError);
+      return { success: false, error: profileError };
+    }
+
+    if (!existingProfile) {
+      console.log('📝 No existing profile found, creating new one...');
+      const { success, error } = await createUserProfileFromGoogle(user);
+      
+      if (!success) {
+        return { success: false, error };
+      }
+    } else {
+      console.log('✅ Existing profile found:', existingProfile);
+    }
+
+    return { success: true, user };
+
+  } catch (error) {
+    console.error('❌ Unexpected error in Google callback:', error);
+    return { success: false, error };
   }
 };
 
