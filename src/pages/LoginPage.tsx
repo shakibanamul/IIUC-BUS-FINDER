@@ -22,7 +22,7 @@ const LoginPage: React.FC = () => {
   const [forgotPasswordSuccess, setForgotPasswordSuccess] = useState('');
   const [forgotPasswordError, setForgotPasswordError] = useState('');
   const [showSetupGuide, setShowSetupGuide] = useState(false);
-  const [googleConfigStatus, setGoogleConfigStatus] = useState<'checking' | 'available' | 'needs-setup'>('checking');
+  const [googleConfigStatus, setGoogleConfigStatus] = useState<'checking' | 'available' | 'needs-setup'>('available'); // Default to available
 
   // Check for Google OAuth success/error in URL params
   useEffect(() => {
@@ -46,24 +46,35 @@ const LoginPage: React.FC = () => {
     const checkGoogleConfig = async () => {
       try {
         setGoogleConfigStatus('checking');
+        
+        // Add a delay to show the checking state
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
         const { isConfigured, error } = await checkGoogleOAuthConfig();
         
         if (isConfigured) {
           setGoogleConfigStatus('available');
-          console.log('✅ Google OAuth is configured and available');
+          console.log('✅ Google OAuth is assumed to be configured');
         } else {
           setGoogleConfigStatus('needs-setup');
           console.warn('⚠️ Google OAuth needs setup:', error);
         }
       } catch (error) {
         console.error('❌ Error checking Google config:', error);
-        setGoogleConfigStatus('needs-setup');
+        // Default to available and let the actual sign-in attempt handle errors
+        setGoogleConfigStatus('available');
       }
     };
 
-    // Add a small delay to avoid immediate checking
-    const timer = setTimeout(checkGoogleConfig, 500);
-    return () => clearTimeout(timer);
+    // Only check if we have valid Supabase credentials
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+    
+    if (supabaseUrl && supabaseAnonKey && supabaseUrl !== 'https://placeholder.supabase.co') {
+      checkGoogleConfig();
+    } else {
+      setGoogleConfigStatus('needs-setup');
+    }
   }, []);
 
   // Show loading spinner while auth is initializing
@@ -156,6 +167,7 @@ const LoginPage: React.FC = () => {
         setError(error.message);
         
         if (needsSetup) {
+          setGoogleConfigStatus('needs-setup');
           setShowSetupGuide(true);
         }
       } else if (data) {

@@ -31,7 +31,7 @@ if (supabaseUrl && supabaseAnonKey && supabaseUrl !== 'https://placeholder.supab
   console.warn('⚠️ Supabase credentials missing - running in offline mode');
 }
 
-// Enhanced Google OAuth configuration check
+// Improved Google OAuth configuration check
 export const checkGoogleOAuthConfig = async (): Promise<{ isConfigured: boolean; error?: string }> => {
   try {
     // Check if Supabase is properly configured
@@ -42,46 +42,32 @@ export const checkGoogleOAuthConfig = async (): Promise<{ isConfigured: boolean;
       };
     }
 
-    // Try to get the auth configuration
-    const { data, error } = await supabase.auth.getSession();
+    // For now, we'll assume Google OAuth might be configured if Supabase is working
+    // In a production environment, you would check the auth providers endpoint
+    // or have a specific endpoint to check provider availability
     
-    if (error) {
-      return {
-        isConfigured: false,
-        error: `Supabase connection error: ${error.message}`
-      };
-    }
-
-    // Check if we can access auth providers (this will help determine if Google is configured)
     try {
-      // Try a test OAuth call to see if providers are available
-      const testResult = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: `${window.location.origin}/login?test=true`,
-          queryParams: {
-            access_type: 'offline',
-            prompt: 'consent',
-          },
-        }
-      });
+      // Test basic auth functionality
+      const { data, error } = await supabase.auth.getSession();
       
-      // If we get here without error, Google OAuth is likely configured
-      return { isConfigured: true };
-      
-    } catch (oauthError: any) {
-      // If OAuth fails, it might be a configuration issue
-      if (oauthError.message?.includes('not enabled') || 
-          oauthError.message?.includes('provider') ||
-          oauthError.message?.includes('client_id')) {
+      if (error) {
         return {
           isConfigured: false,
-          error: 'Google OAuth is not properly configured in Supabase. Please check your provider settings.'
+          error: `Supabase connection error: ${error.message}`
         };
       }
-      
-      // For other errors, assume it might be configured but there's a different issue
+
+      // Since we can't reliably detect Google OAuth configuration without making an actual request,
+      // we'll assume it's available if Supabase is working properly
+      // The actual Google OAuth errors will be handled in the signInWithGoogle function
+      console.log('✅ Supabase auth is working, assuming Google OAuth might be configured');
       return { isConfigured: true };
+      
+    } catch (authError: any) {
+      return {
+        isConfigured: false,
+        error: `Auth system error: ${authError.message}`
+      };
     }
     
   } catch (error: any) {
@@ -119,7 +105,6 @@ export const signInWithGoogle = async (): Promise<{ data?: any; error?: any; nee
         queryParams: {
           access_type: 'offline',
           prompt: 'consent',
-          hd: '', // Allow any domain, remove if you want to restrict to specific domains
         },
         skipBrowserRedirect: false, // Ensure browser redirect happens
       }
